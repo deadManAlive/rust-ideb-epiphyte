@@ -26,6 +26,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Exiting...");
     
         syringe.eject(injected_payload)?;
+    } else {
+        println!("The app doesn't seem to be run...");
     }
  
     Ok(())

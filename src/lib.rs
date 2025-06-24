@@ -1,29 +1,110 @@
-use std::{ffi::CString, thread};
+use std::{ffi::CString, mem::transmute, os::raw::c_void, thread};
 
+use minhook::MinHook;
 use windows::{
     Win32::{
         Foundation::HMODULE,
-        System::{LibraryLoader::GetModuleHandleA, SystemServices::DLL_PROCESS_ATTACH},
-        UI::WindowsAndMessaging::{MB_OK, MessageBoxA},
+        System::{
+            Diagnostics::Debug::OutputDebugStringA,
+            LibraryLoader::GetModuleHandleA,
+            SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH},
+        },
     },
-    core::{PCSTR, s},
+    core::PCSTR,
 };
 
+type DecryptionSubroutine = unsafe extern "C" fn(
+    a0: i32,
+    a1: i32,
+    a2: i32,
+    a3: i32,
+    q_string_password: *mut c_void,
+    q_file_ideb_file: *mut c_void,
+    q_file_zip_file: *mut c_void,
+) -> i32;
+
+static mut ORIGINAL_FUNC: Option<DecryptionSubroutine> = None;
+const DECRYPTION_OFFSET: usize = 0x41210;
+
+fn debug(message: &str) {
+    let message = CString::new(message).unwrap();
+    unsafe { OutputDebugStringA(PCSTR(message.as_ptr() as _)) };
+}
+
+unsafe extern "C" fn detour_function(
+    a0: i32,
+    a1: i32,
+    a2: i32,
+    a3: i32,
+    q_string_password: *mut c_void,
+    q_file_ideb_file: *mut c_void,
+    q_file_zip_file: *mut c_void,
+) -> i32 {
+    unsafe {
+        let msg = format!(
+            "[Hook] Params: a1={a1}, a2={a2}, a3={a3}, password={q_string_password:?}, ideb={q_file_ideb_file:?}, zip={q_file_zip_file:?}"
+        );
+        debug(&msg);
+
+        if let Some(original_function) = ORIGINAL_FUNC {
+            original_function(
+                a0,
+                a1,
+                a2,
+                a3,
+                q_string_password,
+                q_file_ideb_file,
+                q_file_zip_file,
+            )
+        } else {
+            0
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
-pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut core::ffi::c_void) -> bool {
+pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> bool {
+    // use thread here from start
     if fwd_reason == DLL_PROCESS_ATTACH {
         thread::spawn(|| unsafe {
+            debug("Bonjour! iDebViewer is being injected!");
             let process_handle = GetModuleHandleA(None).unwrap();
-            let phstr = format!("process_handle: {process_handle:#?}");
-            let phstr = CString::new(phstr).unwrap();
+            let base_address = process_handle.0 as *const c_void;
+            let target_address = base_address.add(DECRYPTION_OFFSET);
 
-            MessageBoxA(
-                None,
-                PCSTR(phstr.as_ptr() as *const u8),
-                s!("iDebViewer has been injected!"),
-                MB_OK,
-            );
+            debug(&format!("target: {target_address:#?}"));
+            debug(&format!("detour: {:#?}", detour_function as *mut c_void));
+
+            let original = match MinHook::create_hook(target_address as _, detour_function as _) {
+                Ok(addr) => addr,
+                Err(e) => {
+                    debug(&format!("Failed creating hook...: {e:#?}"));
+                    return;
+                }
+            };
+
+            debug(&format!("original after create: {original:#?}"));
+
+            if let Err(e) = MinHook::enable_all_hooks() {
+                debug(&format!("Failed enabling hook...: {e:#?}"));
+                return;
+            }
+
+            ORIGINAL_FUNC = Some(transmute::<*mut c_void, DecryptionSubroutine>(
+                original as _,
+            ));
+
+            if let Some(addr) = ORIGINAL_FUNC {
+                debug(&format!("original after transmute: {addr:#?}"));
+            } else {
+                debug("the hell?");
+            }
         });
+    }
+
+    // do not spawn threads here...
+    if fwd_reason == DLL_PROCESS_DETACH {
+        debug("Au revoir!");
     }
 
     true

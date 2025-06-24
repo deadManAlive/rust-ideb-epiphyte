@@ -1,5 +1,6 @@
 use std::{ffi::CString, mem::transmute, os::raw::c_void, thread};
 
+use axum::{Router, response::Html, routing::get};
 use minhook::MinHook;
 use windows::{
     Win32::{
@@ -81,6 +82,24 @@ unsafe extern "C" fn detour_function(
     }
 }
 
+async fn server() {
+    let app = Router::new().route("/", get(async || Html("<h1>Hello!</h1>")));
+    // let listener = tokio::net::TcpListener::bind("127.0.0.1:8070")
+    //     .await
+    //     .unwrap();
+    // axum::serve(listener, app).await.unwrap();
+    match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
+        Ok(listener) => {
+            if let Err(e) = axum::serve(listener, app).await {
+                dbgmsgbox(&format!("creating axum service error: {e:#?}"), None);
+            }
+        }
+        Err(e) => {
+            dbgmsgbox(&format!("creating listener error: {e:#?}"), None);
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> bool {
     // use thread here from start
@@ -115,6 +134,16 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
                 debug(&format!("original after transmute: {addr:#?}"));
             } else {
                 debug("the hell?");
+            }
+        });
+
+        thread::spawn(|| {
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(b) => b.block_on(server()),
+                Err(e) => dbgmsgbox(&format!("tokio runtime error: {e:#?}"), None),
             }
         });
     }

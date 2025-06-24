@@ -9,6 +9,7 @@ use windows::{
             LibraryLoader::GetModuleHandleA,
             SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH},
         },
+        UI::WindowsAndMessaging::{MB_OK, MessageBoxA},
     },
     core::PCSTR,
 };
@@ -26,9 +27,27 @@ type DecryptionSubroutine = unsafe extern "C" fn(
 static mut ORIGINAL_FUNC: Option<DecryptionSubroutine> = None;
 const DECRYPTION_OFFSET: usize = 0x41210;
 
+#[allow(unused)]
 fn debug(message: &str) {
     let message = CString::new(message).unwrap();
     unsafe { OutputDebugStringA(PCSTR(message.as_ptr() as _)) };
+}
+
+#[allow(unused)]
+fn dbgmsgbox(message: &str, title: Option<&str>) {
+    let message = CString::new(message).unwrap();
+    let title = match title {
+        Some(t) => CString::new(t).unwrap(),
+        None => CString::new("Debug").unwrap(),
+    };
+    thread::spawn(move || unsafe {
+        MessageBoxA(
+            None,
+            PCSTR(message.as_ptr() as _),
+            PCSTR(title.as_ptr() as _),
+            MB_OK,
+        );
+    });
 }
 
 unsafe extern "C" fn detour_function(
@@ -90,9 +109,7 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
                 return;
             }
 
-            ORIGINAL_FUNC = Some(transmute::<*mut c_void, DecryptionSubroutine>(
-                original as _,
-            ));
+            ORIGINAL_FUNC = Some(transmute(original));
 
             if let Some(addr) = ORIGINAL_FUNC {
                 debug(&format!("original after transmute: {addr:#?}"));

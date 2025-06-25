@@ -1,12 +1,6 @@
 mod hexer;
 
-use std::{
-    ffi::CString,
-    mem::transmute,
-    os::raw::c_void,
-    sync::{Arc, LazyLock, Mutex},
-    thread, time,
-};
+use std::{ffi::CString, mem::transmute, os::raw::c_void};
 
 use axum::{
     Json, Router,
@@ -15,7 +9,7 @@ use axum::{
 };
 use minhook::MinHook;
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot::{Sender, channel};
+use std::thread;
 use windows::{
     Win32::{
         Foundation::HMODULE,

@@ -5,7 +5,7 @@ use std::{ffi::CString, mem::transmute, os::raw::c_void, thread};
 use axum::{
     Json, Router,
     response::Html,
-    routing::{get, post},
+    routing::{self, get},
 };
 use minhook::MinHook;
 use serde::{Deserialize, Serialize};
@@ -96,6 +96,26 @@ unsafe extern "C" fn detour_function(
     }
 }
 
+async fn server() {
+    let app = Router::new()
+        .route("/", get(async || Html("<h1>Hello!</h1>")))
+        .route(
+            "/decrypt",
+            routing::post(async |Json(payload): Json<DecryptionTarget>| Json(payload)),
+        );
+
+    match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
+        Ok(listener) => {
+            if let Err(e) = axum::serve(listener, app).await {
+                dbgmsgbox(&format!("creating axum service error: {e:#?}"), None);
+            }
+        }
+        Err(e) => {
+            dbgmsgbox(&format!("creating listener error: {e:#?}"), None);
+        }
+    }
+}
+
 //TODO: how to hand-craft data to feed to the subroutine?
 #[unsafe(no_mangle)]
 pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> bool {
@@ -126,7 +146,7 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
                 return;
             }
 
-            ORIGINAL_FUNC = Some(transmute(original));
+            ORIGINAL_FUNC = Some(transmute::<*mut c_void, DecryptionSubroutine>(original));
 
             if let Some(addr) = ORIGINAL_FUNC {
                 debug(&format!("original after transmute: {addr:#?}"));
@@ -141,26 +161,7 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
                 .enable_all()
                 .build()
             {
-                Ok(b) => b.block_on(async {
-                    let app = Router::new()
-                        .route("/", get(async || Html("<h1>Hello!</h1>")))
-                        // .route(
-                        //     "/decrypt",
-                        //     post(async |Json(payload): Json<DecryptionTarget>| Json(payload)),
-                        // );
-                        ;
-
-                    match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
-                        Ok(listener) => {
-                            if let Err(e) = axum::serve(listener, app).await {
-                                dbgmsgbox(&format!("creating axum service error: {e:#?}"), None);
-                            }
-                        }
-                        Err(e) => {
-                            dbgmsgbox(&format!("creating listener error: {e:#?}"), None);
-                        }
-                    }
-                }),
+                Ok(b) => b.block_on(server()),
                 Err(e) => dbgmsgbox(&format!("tokio runtime error: {e:#?}"), None),
             }
         });

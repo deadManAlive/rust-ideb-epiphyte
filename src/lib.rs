@@ -1,3 +1,5 @@
+mod hexer;
+
 use std::{ffi::CString, mem::transmute, os::raw::c_void, thread};
 
 use axum::{Router, response::Html, routing::get};

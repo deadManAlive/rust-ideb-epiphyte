@@ -107,11 +107,11 @@ async fn server() {
     match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
         Ok(listener) => {
             if let Err(e) = axum::serve(listener, app).await {
-                dbgmsgbox(&format!("creating axum service error: {e:#?}"), None);
+                debug(&format!("creating axum service error: {e:#?}"));
             }
         }
         Err(e) => {
-            dbgmsgbox(&format!("creating listener error: {e:#?}"), None);
+            debug(&format!("creating listener error: {e:#?}"));
         }
     }
 }
@@ -128,8 +128,8 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
             let base_address = process_handle.0 as *const c_void;
             let target_address = base_address.add(DECRYPTION_OFFSET);
 
-            debug(&format!("target: {target_address:#?}"));
-            debug(&format!("detour: {:#?}", detour_function as *mut c_void));
+            // debug(&format!("target: {target_address:#?}"));
+            // debug(&format!("detour: {:#?}", detour_function as *mut c_void));
 
             let original = match MinHook::create_hook(target_address as _, detour_function as _) {
                 Ok(addr) => addr,
@@ -139,7 +139,7 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
                 }
             };
 
-            debug(&format!("original after create: {original:#?}"));
+            // debug(&format!("original after create: {original:#?}"));
 
             if let Err(e) = MinHook::enable_all_hooks() {
                 debug(&format!("Failed enabling hook...: {e:#?}"));
@@ -148,11 +148,11 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
 
             ORIGINAL_FUNC = Some(transmute::<*mut c_void, DecryptionSubroutine>(original));
 
-            if let Some(addr) = ORIGINAL_FUNC {
-                debug(&format!("original after transmute: {addr:#?}"));
-            } else {
-                debug("the hell?");
-            }
+            // if let Some(addr) = ORIGINAL_FUNC {
+            //     debug(&format!("original after transmute: {addr:#?}"));
+            // } else {
+            //     debug("the hell?");
+            // }
         });
 
         // server thread

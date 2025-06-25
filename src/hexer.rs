@@ -13,8 +13,8 @@ fn next_power_of_two(mut n: u32) -> u32 {
     n + 1
 }
 
-pub fn strstr(rc: u32, password: &str) -> Vec<u8> {
-    let length: u32 = password.len() as u32 - 1;
+pub fn strstr(rc: u32, strdata: &str) -> Vec<u8> {
+    let length: u32 = strdata.len() as u32 - 1;
     let alloc = next_power_of_two(length);
     let flags: u32 = 0x10;
 
@@ -25,7 +25,7 @@ pub fn strstr(rc: u32, password: &str) -> Vec<u8> {
     sqpassword.extend_from_slice(&alloc.to_le_bytes());
     sqpassword.extend_from_slice(&flags.to_le_bytes());
 
-    let sqpassunits: Vec<u16> = password.encode_utf16().collect();
+    let sqpassunits: Vec<u16> = strdata.encode_utf16().collect();
 
     for unit in &sqpassunits {
         sqpassword.extend_from_slice(&unit.to_le_bytes());

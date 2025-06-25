@@ -5,7 +5,7 @@ use std::{ffi::CString, mem::transmute, os::raw::c_void, thread};
 use axum::{
     Json, Router,
     response::Html,
-    routing::{self, get},
+    routing::{get, post},
 };
 use minhook::MinHook;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,8 @@ use windows::{
     },
     core::PCSTR,
 };
+
+use crate::hexer::strstr;
 
 type DecryptionSubroutine = unsafe extern "C" fn(
     a0: i32,
@@ -65,6 +67,13 @@ pub struct DecryptionTarget {
     pub zip_path: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Hex {
+    pub password: Vec<u8>,
+    pub ideb_path: Vec<u8>,
+    pub zip_path: Vec<u8>,
+}
+
 unsafe extern "C" fn detour_function(
     a0: i32,
     a1: i32,
@@ -96,13 +105,18 @@ unsafe extern "C" fn detour_function(
     }
 }
 
+async fn decrypt(Json(payload): Json<DecryptionTarget>) -> Json<Hex> {
+    Json(Hex {
+        password: strstr(4, &payload.password),
+        ideb_path: strstr(3, &payload.ideb_path),
+        zip_path: strstr(2, &payload.zip_path),
+    })
+}
+
 async fn server() {
     let app = Router::new()
         .route("/", get(async || Html("<h1>Hello!</h1>")))
-        .route(
-            "/decrypt",
-            routing::post(async |Json(payload): Json<DecryptionTarget>| Json(payload)),
-        );
+        .route("/decrypt", post(decrypt));
 
     match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
         Ok(listener) => {

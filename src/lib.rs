@@ -1,6 +1,12 @@
 mod hexer;
 
-use std::{ffi::CString, mem::transmute, os::raw::c_void, thread};
+use std::{
+    ffi::CString,
+    mem::transmute,
+    os::raw::c_void,
+    sync::{Arc, LazyLock, Mutex},
+    thread,
+};
 
 use axum::{
     Json, Router,
@@ -9,6 +15,7 @@ use axum::{
 };
 use minhook::MinHook;
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot::{Receiver, Sender, channel};
 use windows::{
     Win32::{
         Foundation::HMODULE,
@@ -130,6 +137,10 @@ async fn server() {
     }
 }
 
+static TX: LazyLock<Arc<Mutex<Option<Sender<()>>>>> = LazyLock::new(|| Arc::new(Mutex::new(None)));
+static RX: LazyLock<Arc<Mutex<Option<Receiver<()>>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(None)));
+
 //TODO: how to hand-craft data to feed to the subroutine?
 #[unsafe(no_mangle)]
 pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> bool {
@@ -171,6 +182,30 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
 
         // server thread
         thread::spawn(|| {
+            let (tx, rx) = channel::<()>();
+
+            {
+                let mut atx = match (*TX).lock() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        dbgmsgbox(&format!("locking TX failed on initialization: {e:?}"), None);
+                        return;
+                    }
+                };
+                (*atx).replace(tx);
+            }
+
+            {
+                let mut arx = match (*RX).lock() {
+                    Ok(r) => r,
+                    Err(e) => {
+                        dbgmsgbox(&format!("locking RX failed on initialization: {e:?}"), None);
+                        return;
+                    }
+                };
+                (*arx).replace(rx);
+            }
+
             match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -179,10 +214,58 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
                 Err(e) => dbgmsgbox(&format!("tokio runtime error: {e:#?}"), None),
             }
         });
+
+        // test thread
+        // TODO: THIS THING GOES OFF BEFORE THE INITIALIZATION OF CHANNELS END.
+        // so what the hell happened in one thread impl.?
+        thread::spawn(|| {
+            let mut arx = match (*RX).lock() {
+                Ok(r) => r,
+                Err(e) => {
+                    dbgmsgbox(&format!("locking RX failed on initialization: {e:?}"), None);
+                    return;
+                }
+            };
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(b) => b.block_on(async {
+                    match (*arx).take() {
+                        Some(r) => {
+                            r.await.ok();
+                        }
+                        None => {
+                            dbgmsgbox("RX is none on thread await", None);
+                        }
+                    }
+                }),
+                Err(e) => dbgmsgbox(&format!("tokio runtime error: {e:#?}"), None),
+            }
+            dbgmsgbox("this has been called", Some("stuff is working, probably"));
+        });
     }
 
     // do not spawn threads here...
     if fwd_reason == DLL_PROCESS_DETACH {
+        {
+            let mut atx = match (*TX).lock() {
+                Ok(t) => t,
+                Err(e) => {
+                    dbgmsgbox(&format!("locking TX failed on detachment: {e:?}"), None);
+                    return false;
+                }
+            };
+            match (*atx).take() {
+                Some(t) => {
+                    let _ = t.send(());
+                }
+                None => {
+                    dbgmsgbox("TX is none on detachment", None);
+                    return false;
+                }
+            };
+        }
         MinHook::uninitialize();
         debug("Au revoir!");
     }

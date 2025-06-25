@@ -62,7 +62,7 @@ unsafe extern "C" fn detour_function(
 ) -> i32 {
     unsafe {
         let msg = format!(
-            "[Hook] Params: a1={a1}, a2={a2}, a3={a3}, password={q_string_password:?}, ideb={q_file_ideb_file:?}, zip={q_file_zip_file:?}"
+            "a0 = {a0}, a1={a1}, a2={a2}, a3={a3}, password={q_string_password:?}, ideb={q_file_ideb_file:?}, zip={q_file_zip_file:?}"
         );
         debug(&msg);
 
@@ -82,30 +82,14 @@ unsafe extern "C" fn detour_function(
     }
 }
 
-async fn server() {
-    let app = Router::new().route("/", get(async || Html("<h1>Hello!</h1>")));
-    // let listener = tokio::net::TcpListener::bind("127.0.0.1:8070")
-    //     .await
-    //     .unwrap();
-    // axum::serve(listener, app).await.unwrap();
-    match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
-        Ok(listener) => {
-            if let Err(e) = axum::serve(listener, app).await {
-                dbgmsgbox(&format!("creating axum service error: {e:#?}"), None);
-            }
-        }
-        Err(e) => {
-            dbgmsgbox(&format!("creating listener error: {e:#?}"), None);
-        }
-    }
-}
-
+//TODO: how to hand-craft data to feed to the subroutine?
 #[unsafe(no_mangle)]
 pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> bool {
     // use thread here from start
     if fwd_reason == DLL_PROCESS_ATTACH {
         thread::spawn(|| unsafe {
             debug("Bonjour! iDebViewer is being injected!");
+
             let process_handle = GetModuleHandleA(None).unwrap();
             let base_address = process_handle.0 as *const c_void;
             let target_address = base_address.add(DECRYPTION_OFFSET);
@@ -135,21 +119,38 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
             } else {
                 debug("the hell?");
             }
-        });
 
-        thread::spawn(|| {
-            match tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(b) => b.block_on(server()),
-                Err(e) => dbgmsgbox(&format!("tokio runtime error: {e:#?}"), None),
-            }
+            // server thread
+            thread::spawn(|| {
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(b) => b.block_on(async {
+                        let app = Router::new().route("/", get(async || Html("<h1>Hello!</h1>")));
+                        match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
+                            Ok(listener) => {
+                                if let Err(e) = axum::serve(listener, app).await {
+                                    dbgmsgbox(
+                                        &format!("creating axum service error: {e:#?}"),
+                                        None,
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                dbgmsgbox(&format!("creating listener error: {e:#?}"), None);
+                            }
+                        }
+                    }),
+                    Err(e) => dbgmsgbox(&format!("tokio runtime error: {e:#?}"), None),
+                }
+            });
         });
     }
 
     // do not spawn threads here...
     if fwd_reason == DLL_PROCESS_DETACH {
+        MinHook::uninitialize();
         debug("Au revoir!");
     }
 

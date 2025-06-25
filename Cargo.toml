@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = "0.8.4"
+axum = { version = "0.8.4", features = ["json"] }
 bincode = "2.0.1"
 dll-syringe = { version = "0.16.0", features = ["into-x86-from-x64"] }
 minhook = "0.7.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
 tokio = { version = "1.45.1", features = ["full"] }
 windows = { version = "0.61.3", features = [
     "Win32_Foundation",
@@ -19,10 +21,6 @@ windows = { version = "0.61.3", features = [
 [[bin]]
 name = "injector"
 path = "src/main.rs"
-
-[[bin]]
-name = "hexer"
-path = "src/hexer.rs"
 
 [lib]
 name = "epiphyte"

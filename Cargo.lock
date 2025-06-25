@@ -609,6 +609,8 @@ dependencies = [
  "bincode",
  "dll-syringe",
  "minhook",
+ "serde",
+ "serde_json",
  "tokio",
  "windows",
 ]

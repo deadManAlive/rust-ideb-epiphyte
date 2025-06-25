@@ -2,8 +2,13 @@ mod hexer;
 
 use std::{ffi::CString, mem::transmute, os::raw::c_void, thread};
 
-use axum::{Router, response::Html, routing::get};
+use axum::{
+    Json, Router,
+    response::Html,
+    routing::{get, post},
+};
 use minhook::MinHook;
+use serde::{Deserialize, Serialize};
 use windows::{
     Win32::{
         Foundation::HMODULE,
@@ -51,6 +56,13 @@ fn dbgmsgbox(message: &str, title: Option<&str>) {
             MB_OK,
         );
     });
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DecryptionTarget {
+    pub password: String,
+    pub ideb_path: String,
+    pub zip_path: String,
 }
 
 unsafe extern "C" fn detour_function(
@@ -121,32 +133,36 @@ pub extern "system" fn DllMain(_: HMODULE, fwd_reason: u32, _: *mut c_void) -> b
             } else {
                 debug("the hell?");
             }
+        });
 
-            // server thread
-            thread::spawn(|| {
-                match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(b) => b.block_on(async {
-                        let app = Router::new().route("/", get(async || Html("<h1>Hello!</h1>")));
-                        match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
-                            Ok(listener) => {
-                                if let Err(e) = axum::serve(listener, app).await {
-                                    dbgmsgbox(
-                                        &format!("creating axum service error: {e:#?}"),
-                                        None,
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                dbgmsgbox(&format!("creating listener error: {e:#?}"), None);
+        // server thread
+        thread::spawn(|| {
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(b) => b.block_on(async {
+                    let app = Router::new()
+                        .route("/", get(async || Html("<h1>Hello!</h1>")))
+                        // .route(
+                        //     "/decrypt",
+                        //     post(async |Json(payload): Json<DecryptionTarget>| Json(payload)),
+                        // );
+                        ;
+
+                    match tokio::net::TcpListener::bind("127.0.0.1:8070").await {
+                        Ok(listener) => {
+                            if let Err(e) = axum::serve(listener, app).await {
+                                dbgmsgbox(&format!("creating axum service error: {e:#?}"), None);
                             }
                         }
-                    }),
-                    Err(e) => dbgmsgbox(&format!("tokio runtime error: {e:#?}"), None),
-                }
-            });
+                        Err(e) => {
+                            dbgmsgbox(&format!("creating listener error: {e:#?}"), None);
+                        }
+                    }
+                }),
+                Err(e) => dbgmsgbox(&format!("tokio runtime error: {e:#?}"), None),
+            }
         });
     }
 

@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 fn next_power_of_two(mut n: u32) -> u32 {
     if n == 0 {
         return 1;
@@ -30,15 +32,4 @@ pub fn strstr(rc: u32, password: &str) -> Vec<u8> {
     }
 
     sqpassword
-}
-
-fn main() {
-    let cnp = |rc: u32, key: &str| {
-        let mchs = strstr(rc, key);
-        println!("{:02x?}", mchs);
-    };
-
-    cnp(4, "ideb");
-    cnp(3, "C:/Users/splinter/Downloads/ideb-stuff/5001213751.ideb");
-    cnp(2, "./tmp/202506251257282201")
 }
